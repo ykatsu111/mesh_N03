@@ -35,6 +35,7 @@ python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} 
   - lons: 1-dimensional array presents the grid points for longitude axis 
   - lats: 1-dimensional array presents the grid points for latitude axis 
   - data: 2-dimensional array present land (=1) and sea (=0) 
+  
   If you do not have the mask data, an array filled with 1 can be assigned as the data field. 
   If so, note that you should not use the nearest neighbor algorithm (set --disable-nearest).
   
@@ -48,6 +49,7 @@ python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} 
   - N03_003: metropolis and city designated by ordinance 
   - N03_004: cities, towns and villages 
   - N03_007: code number of administrative division 
+  
   See http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html
   
   ### -o output, --output output
