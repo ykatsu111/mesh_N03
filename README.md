@@ -7,6 +7,8 @@ The output file is numpy npz file containing following fields,
 - data: 2-dimensional array presents the administrative by the index number (0, 1, 2, ...) 
 - name: the administrative name included at its corresponding index number of data
 
+In order to run this program, your system is necessary to support displaying Japanese on the console.
+
 # General Usage
 
 ```
