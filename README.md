@@ -13,7 +13,7 @@ The output file is numpy npz file containing following fields,
 python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} [--disable-nearest]
 ```
 
-## optional arguments
+## Mandatory arguments
 
   ### -h, --help            
   
@@ -55,6 +55,8 @@ python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} 
   ### -o output, --output output
   
   Output file name as numpy npz file
+  
+  ## Optional arguments
   
   ### --disable-nearest     
   
