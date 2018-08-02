@@ -224,8 +224,8 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
     # =========================================================== #
 
     return {
-        "lons": lons,
-        "lats": lats,
+        "lons": lons[0, :],
+        "lats": lats[:, 0],
         "data": mesh,
         "name": np.array(name)
     }
