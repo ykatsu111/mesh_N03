@@ -1,5 +1,4 @@
-#!/usr/local/bin/python2.7
-# -*- coding: utf-8 -*-
+#!/usr/bin/python3.8
 
 
 """
@@ -9,7 +8,7 @@ http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html
 """
 
 
-__version__ = "1.0"
+__version__ = "2.1"
 
 
 AdminLevels = [
@@ -36,18 +35,16 @@ def load_mask(f):
     if "data" not in npz:
         raise ValueError("mask data mush contain data field.")
 
-    if npz["lons"].ndim != 1:
-        raise ValueError("lons must be 1-dim array. not %d-dim." % npz["lons"].ndim)
-    if npz["lats"].ndim != 1:
-        raise ValueError("lats must be 1-dim array. not %d-dim." % npz["lats"].ndim)
+    if npz["lons"].ndim != 2:
+        raise ValueError("lons must be 2-dim array. not %d-dim." % npz["lons"].ndim)
+    if npz["lats"].ndim != 2:
+        raise ValueError("lats must be 2-dim array. not %d-dim." % npz["lats"].ndim)
     if npz["data"].ndim != 2:
         raise ValueError("data must be 2-dim array. not %d-dim." % npz["data"].ndim)
 
-    if npz["data"].shape != (npz["lats"].size, npz["lons"].size):
+    if npz["data"].shape != npz["lats"].shape or npz["data"].shape != npz["lons"].shape:
         raise ValueError(
-            "shape of data and that of (lons, lats) are not matched.\n" +
-            "shape of data: %s\n" % str(npz["data"].shape) +
-            "(lons, lats) : (%d, %d)" % (npz["lats"].size, npz["lons"].size)
+            "shape of data and that of (lons, lats) are not matched."
         )
 
     return npz
@@ -64,52 +61,66 @@ def get_admin_name(geoj, level):
 def _get_lonlats(feature):
     import numpy as np
 
-    if feature.geometry.type != u"Polygon":
-        raise RuntimeError("Only Polygon type is supported! not %s" % feature.geometry.type)
+    if feature.geometry.type != "Polygon":
+        raise RuntimeError(f"Only Polygon type is supported! not {feature.geometry.type:s}")
 
-    _coords = np.array(
-        feature.geometry.coordinates
-    )
-    assert _coords.shape[0] == 1
+    for _coords in feature.geometry.coordinates:
+        coords = np.array(_coords, dtype=float)
+        lons = coords[:, 0]
+        lats = coords[:, 1]
+        yield lons, lats
 
-    lons = _coords[0, :, 0]
-    lats = _coords[0, :, 1]
 
-    return lons, lats
+def crossing_number_algorithm(x, y, xx, yy):
+    """
+    reference: https://www.nttpc.co.jp/technology/number_algorithm.html
+    """
+    import numpy as np
+
+    cross_y = ((yy[:-1] <= y) & (y < yy[1:])) | ((yy[1:] <= y) & (y < yy[:-1]))
+    vt = (y - yy[:-1]) / (yy[1:] - y)
+    cross_x = x < (xx[:-1] + vt * (xx[1:] - xx[:-1]))
+    cn = np.sum(cross_y & cross_x)
+    return cn % 2 == 1
 
 
 def _is_surrounded(lon, lat, lons, lats):
-    import numpy as np
 
     if lon < lons.min() or lons.max() < lon:
         return False
     if lat < lats.min() or lats.max() < lat:
         return False
 
-    in_lon = np.array((lons <= lon) & (lon <= lons), dtype=bool)
-    in_lat = np.array((lats <= lat) & (lat <= lats), dtype=bool)
-    in_mesh = np.array(in_lon & in_lat, dtype=bool)
-
-    return np.max(in_mesh) > 0
+    return crossing_number_algorithm(lon, lat, lons, lats)
 
 
 def get_surrounded_name(lon, lat, geoj, level):
-    import numpy as np
 
     for feature in geoj:
-        lons, lats = _get_lonlats(feature)
-        if _is_surrounded(lon, lat, lons, lats):
-            return feature.properties[level]
+        for lons, lats in _get_lonlats(feature):
+            if _is_surrounded(lon, lat, lons, lats):
+                return feature.properties[level]
 
     raise NotFoundAdminName("Not found the surrounded administrative name!")
 
 
-def _nearest_distance(lon, lat, lons, lats):
+def calc_distance(lon1, lat1, lon2, lat2):
     import numpy as np
 
-    dlons = np.abs(lons - lon)
-    dlats = np.abs(lats - lat)
-    dd = np.sqrt(dlons ** 2 + dlats ** 2)
+    x1, y1, x2, y2 = np.deg2rad(lon1), np.deg2rad(lat1), np.deg2rad(lon2), np.deg2rad(lat2)
+    R = 6378.137  # km Earth radius
+    dx = np.abs(np.cos(x2) * np.cos(y2) - np.cos(x1) * np.cos(y1))
+    dy = np.abs(np.sin(x2) * np.cos(y2) - np.sin(x1) * np.cos(y1))
+    dz = np.abs(np.sin(y2) - np.sin(y1))
+    d2 = dx**2 + dy**2 + dz**2
+    theta = np.arccos(1 - d2 * 0.5)
+    assert np.all(~np.isnan(theta))
+    return R * theta
+
+
+def _nearest_distance(lon, lat, lons, lats):
+    import numpy as np
+    dd = calc_distance(lon, lat, lons, lats)
     return dd.min()
 
 
@@ -118,7 +129,9 @@ def get_nearest_name(lon, lat, geoj, level):
 
     nearesets = np.full([len(geoj)], -np.inf)
     for i, feature in enumerate(geoj):
-        lons, lats = _get_lonlats(feature)
+        coods = list(_get_lonlats(feature))
+        lons = np.concatenate([lons for lons, lats in coods])
+        lats = np.concatenate([lats for lons, lats in coods])
         nearesets[i] = _nearest_distance(lon, lat, lons, lats)
 
     feature_min = geoj[nearesets.argmin()]
@@ -132,8 +145,8 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
     :param fjson: file name of GeoJSON
     :param fmask: file name of land/sea mask data as numpy npz file
                   The file should contain following fields at least,
-                  lons: 1-dimensional array presents the grid points for longitude axis
-                  lats: 1-dimensional array presents the grid points for latitude axis
+                  lons: 2-dimensional array presents the grid points for longitude axis
+                  lats: 2-dimensional array presents the grid points for latitude axis
                   data: 2-dimensional array present land (=1) and sea (=0)
     :param level: the administrative level,
                   N03_001: prefectures
@@ -149,8 +162,8 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
                         or not
                         This should be False if the land/sea mask data is filled only with 1.
     :return: {
-            'lons': 1-dimensional array presents the grid points for longitude axis,
-            'lats': 1-dimensional array presents the grid points for latitude axis,
+            'lons': 2-dimensional array presents the grid points for longitude axis,
+            'lats': 2-dimensional array presents the grid points for latitude axis,
             'data': 2-dimensional array presents the administrative by the index number (0, 1, 2, ...),
             'name': the administrative name included at its corresponding index number of data
         }
@@ -158,15 +171,15 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
 
     import pygeoj
     import numpy as np
-    from progressbar import ProgressBar
+    from itertools import product
+    from tqdm import tqdm
     import warnings
 
     # =========================================================== #
     # prepare in-data
     geoj = pygeoj.load(fjson)
     _mask = load_mask(fmask)
-    mask = _mask["data"]
-    lons, lats = np.meshgrid(_mask["lons"], _mask["lats"])
+    mask, lons, lats = _mask["data"], _mask["lons"], _mask["lats"]
     # =========================================================== #
 
     # =========================================================== #
@@ -176,56 +189,49 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
     if len(name) == 0:
         raise RuntimeError("GeoJSON has not administrative name!")
     if msg:
-        print "TARGET ADMINISTRATIVE NAMES"
+        print("TARGET ADMINISTRATIVE NAMES")
         for i, n in enumerate(name):
-            print "\t%d: %s" % (i, n)
+            print(f"\t{i:d}: {n:s}")
     # =========================================================== #
 
     # =========================================================== #
     # prepare progress-bar
-    progress_i = 0
     progress_max = np.sum(mask)
     if msg:
-        progress = ProgressBar(maxval=progress_max).start()
+        progress = tqdm(total=progress_max)
     # =========================================================== #
 
     # =========================================================== #
     # convert
-    for j in range(mask.shape[0]):
-        for i in range(mask.shape[1]):
-            if mask[j, i]:
-                if msg:
-                    progress.update(progress_i + 1)
+    for j, i in product(range(mask.shape[0]), range(mask.shape[1])):
+        if mask[j, i]:
+            if msg:
+                progress.update(1)
 
-                lon = lons[j, i]
-                lat = lats[j, i]
+            lon = lons[j, i]
+            lat = lats[j, i]
 
-                try:
-                    n = get_surrounded_name(lon, lat, geoj, level)
-                except NotFoundAdminName as e:
-                    if use_nearest:
-                        n = get_nearest_name(lon, lat, geoj, level)
-                        # warnings.warn(
-                        #     "Not found the administrative name with the surrounded algorithm.\n" +
-                        #     "Alternatively, the name is searched with the nearest algorithm.\n" +
-                        #     "(X, Y) = (%d, %d), name=%s" % (i, j, n),
-                        #     category=UserWarning
-                        # )
-                    else:
-                        continue
-
+            try:
+                n = get_surrounded_name(lon, lat, geoj, level)
                 mesh[j, i] = name.index(n)
-
-                progress_i += 1
-            else:
-                continue
-    if msg:
-        progress.finish()
+            except NotFoundAdminName as e:
+                if use_nearest:
+                    n = get_nearest_name(lon, lat, geoj, level)
+                    # warnings.warn(
+                    #     "Not found the administrative name with the surrounded algorithm.\n" +
+                    #     "Alternatively, the name is searched with the nearest algorithm.\n" +
+                    #     "(X, Y) = (%d, %d), name=%s" % (i, j, n),
+                    #     category=UserWarning
+                    # )
+                else:
+                    continue
+        else:
+            continue
     # =========================================================== #
 
     return {
-        "lons": lons[0, :],
-        "lats": lats[:, 0],
+        "lons": lons,
+        "lats": lats,
         "data": mesh,
         "name": np.array(name)
     }
@@ -246,11 +252,11 @@ downloaded from http://nlftp.mlit.go.jp
 to meshed data.
 
 The output file is numpy npz file containing following fields,
-lons: 1-dimensional array presents the grid points for longitude axis
-lats: 1-dimensional array presents the grid points for latitude axis
+lons: 2-dimensional array presents the grid points for longitude axis
+lats: 2-dimensional array presents the grid points for latitude axis
 data: 2-dimensional array presents the administrative by the index number (0, 1, 2, ...)
 name: the administrative name included at its corresponding index number of data""",
-        epilog="(c) ykatsu111 (2018)",
+        epilog="(c) ykatsu111 (2021)",
         add_help=True
     )
     parser.add_argument(
@@ -271,8 +277,8 @@ name: the administrative name included at its corresponding index number of data
         help="""\
 File name of land/sea mask data as numpy npz file
 The file should contain following fields at least,
-lons: 1-dimensional array presents the grid points for longitude axis
-lats: 1-dimensional array presents the grid points for latitude axis
+lons: 2-dimensional array presents the grid points for longitude axis
+lats: 2-dimensional array presents the grid points for latitude axis
 data: 2-dimensional array present land (=1) and sea (=0)
 If you do not have the mask data, an array filled 
 with 1 can be assigned as the data field.

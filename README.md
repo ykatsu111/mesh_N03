@@ -2,8 +2,8 @@
 
 This program converts the administrative boundary data (GeoJSON file) downloaded from http://nlftp.mlit.go.jp to meshed data.
 The output file is numpy npz file containing following fields, 
-- lons: 1-dimensional array presents the grid points for longitude axis 
-- lats: 1-dimensional array presents the grid points for latitude axis 
+- lons: 2-dimensional array presents the grid points for longitude axis 
+- lats: 2-dimensional array presents the grid points for latitude axis 
 - data: 2-dimensional array presents the administrative by the index number (0, 1, 2, ...) 
 - name: the administrative name included at its corresponding index number of data
 
@@ -34,8 +34,8 @@ python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [
   File name of land/sea mask data as numpy npz file 
   
   The file should contain following fields at least, 
-  - lons: 1-dimensional array presents the grid points for longitude axis 
-  - lats: 1-dimensional array presents the grid points for latitude axis 
+  - lons: 2-dimensional array presents the grid points for longitude axis 
+  - lats: 2-dimensional array presents the grid points for latitude axis 
   - data: 2-dimensional array present land (=1) and sea (=0) 
   
   If you do not have the mask data, an array filled with 1 can be assigned as the data field. 
@@ -78,8 +78,8 @@ Sea/land mask data is necessary for this program as a numpy npz file.
 This mask data will also provide the grid point spacing for the output file.
 
 The mask data must contain following fiels,
- - lons: 1-dimensional array presents the grid points for longitude axis 
- - lats: 1-dimensional array presents the grid points for latitude axis 
+ - lons: 2-dimensional array presents the grid points for longitude axis 
+ - lats: 2-dimensional array presents the grid points for latitude axis 
  - data: 2-dimensional array present land (=1) and sea (=0) 
   
  If you have no mask data, you can use an array of which all the lements are filled with 1, meaning land.
@@ -89,6 +89,7 @@ The mask data must contain following fiels,
  >>> import numpy as np
  >>> lons = np.array([110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120], dtype=np.float)
  >>> lats = np.array([30, 31, 32, 33, 34, 35], dtype=np.float)
+ >>> lons, lats = np.meshgrid(lons, lats)
  >>> data = np.ones([lats.size, lons.size], dtype=np.int)
  >>> np.savez("mask.npz", lons=lons, lats=lats, data=data)
  ```
