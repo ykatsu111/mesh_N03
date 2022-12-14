@@ -67,6 +67,11 @@ python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [
   This algorithm will be used when a grid point is not located in the administrative region. 
   You should use this option if the mask data filled with 1 is assigned.
 
+  ### --prio-ordcity
+
+  An ordinance-designated city name is used if the administrative range is a part of the ordinance-designated city. 
+  This option works only with '-l N03_004'
+
 # GeoJSON data
 
 The GeoJSON data can be downloaded at http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html.

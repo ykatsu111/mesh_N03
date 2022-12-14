@@ -8,7 +8,7 @@ http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html
 """
 
 
-__version__ = "2.1"
+__version__ = "2.2"
 
 
 AdminLevels = [
@@ -50,11 +50,21 @@ def load_mask(f):
     return npz
 
 
-def get_admin_name(geoj, level):
+def get_admin_name_from_properties(properties, level, prio_ordcity=False):
+    if prio_ordcity and level != "N03_004":
+        raise RuntimeError("prio_ordcity=True is only valid wiht level=N03_004")
+    name_i = properties[level]
+    if prio_ordcity:
+        name_i = properties["N03_003"] if "市" in properties["N03_003"] else properties["N03_004"]
+    return name_i
+
+
+def get_admin_name(geoj, level, prio_ordcity=False):
     name = []
     for feature in geoj:
-        if feature.properties[level] not in name:
-            name.append(feature.properties[level])
+        name_i = get_admin_name_from_properties(feature.properties, level, prio_ordcity=prio_ordcity)
+        if name_i not in name:
+            name.append(name_i)
     return name
 
 
@@ -94,12 +104,11 @@ def _is_surrounded(lon, lat, lons, lats):
     return crossing_number_algorithm(lon, lat, lons, lats)
 
 
-def get_surrounded_name(lon, lat, geoj, level):
-
+def get_surrounded_name(lon, lat, geoj, level, prio_ordcity=False):
     for feature in geoj:
         for lons, lats in _get_lonlats(feature):
             if _is_surrounded(lon, lat, lons, lats):
-                return feature.properties[level]
+                return get_admin_name_from_properties(feature.properties, level, prio_ordcity=prio_ordcity)
 
     raise NotFoundAdminName("Not found the surrounded administrative name!")
 
@@ -119,12 +128,11 @@ def calc_distance(lon1, lat1, lon2, lat2):
 
 
 def _nearest_distance(lon, lat, lons, lats):
-    import numpy as np
     dd = calc_distance(lon, lat, lons, lats)
     return dd.min()
 
 
-def get_nearest_name(lon, lat, geoj, level):
+def get_nearest_name(lon, lat, geoj, level, prio_ordcity=False):
     import numpy as np
 
     nearesets = np.full([len(geoj)], -np.inf)
@@ -135,10 +143,10 @@ def get_nearest_name(lon, lat, geoj, level):
         nearesets[i] = _nearest_distance(lon, lat, lons, lats)
 
     feature_min = geoj[nearesets.argmin()]
-    return feature_min.properties[level]
+    return get_admin_name_from_properties(feature_min.properties, level, prio_ordcity=prio_ordcity)
 
 
-def convert(fjson, fmask, level, msg=False, use_nearest=True):
+def convert(fjson, fmask, level, msg=False, use_nearest=True, prio_ordcity=False):
     """
     convert GeoJSON of the Administrative boundary downloaded from nlftp.mlit.go.jp to meshed data
 
@@ -161,6 +169,9 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
                         when a grid point is not located in the administrative region
                         or not
                         This should be False if the land/sea mask data is filled only with 1.
+    :param prio_ordcity: ordinance-designated city name used if the administrative range is 
+                         a part of the ordinance-designated city. 
+                         This option works only with 'level=N03_004'
     :return: {
             'lons': 2-dimensional array presents the grid points for longitude axis,
             'lats': 2-dimensional array presents the grid points for latitude axis,
@@ -185,9 +196,9 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
     # =========================================================== #
     # prepare out-data
     mesh = np.full_like(mask, -1, dtype=int)
-    name = get_admin_name(geoj, level)
+    name = get_admin_name(geoj, level, prio_ordcity=prio_ordcity)
     if len(name) == 0:
-        raise RuntimeError("GeoJSON has not administrative name!")
+        raise RuntimeError("GeoJSON does not have administrative name!")
     if msg:
         print("TARGET ADMINISTRATIVE NAMES")
         for i, n in enumerate(name):
@@ -212,11 +223,11 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True):
             lat = lats[j, i]
 
             try:
-                n = get_surrounded_name(lon, lat, geoj, level)
+                n = get_surrounded_name(lon, lat, geoj, level, prio_ordcity=prio_ordcity)
                 mesh[j, i] = name.index(n)
             except NotFoundAdminName as e:
                 if use_nearest:
-                    n = get_nearest_name(lon, lat, geoj, level)
+                    n = get_nearest_name(lon, lat, geoj, level, prio_ordcity=prio_ordcity)
                     # warnings.warn(
                     #     "Not found the administrative name with the surrounded algorithm.\n" +
                     #     "Alternatively, the name is searched with the nearest algorithm.\n" +
@@ -244,7 +255,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         prog="mesh_N03.py",
         usage="""\
-python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} [--disable-nearest]
+python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} [--disable-nearest] [--prio_ordcity]
 """,
         description="""\
 This program convert the administrative boundary data (GeoJSON file) 
@@ -317,12 +328,24 @@ You should use this option if the mask data filled with 1 is assigned.""",
         action="store_true",
         default=False
     )
+    parser.add_argument(
+        "--prio-ordcity",
+        help="""\
+ordinance-designated city name used 
+if the administrative range is 
+a part of the ordinance-designated city. 
+This option works only with '-l N03_004'""",
+        required=False,
+        action="store_true",
+        default=False
+    )
 
     args = parser.parse_args()
 
     mesh = convert(
         args.json, args.mask, args.level,
-        msg=True, use_nearest=not args.disable_nearest
+        msg=True, use_nearest=not args.disable_nearest,
+        prio_ordcity=args.prio_ordcity
     )
     np.savez(
         args.output,
