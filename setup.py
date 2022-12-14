@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup_args = dict(
     name="mesh_N03",
-    version="2.1",
+    version="2.2",
     install_requires=[
         "numpy",
         "pygeoj",
