@@ -274,6 +274,7 @@ def convert(
                         lon, lat, geoj, level, prio_ordcity=prio_ordcity,
                         inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
                     )
+                    mesh[j, i] = name.index(n)
                     # warnings.warn(
                     #     "Not found the administrative name with the surrounded algorithm.\n" +
                     #     "Alternatively, the name is searched with the nearest algorithm.\n" +
