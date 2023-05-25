@@ -1,10 +1,11 @@
 import sys
 from setuptools import setup
+import mesh_N03
 
 
 setup_args = dict(
     name="mesh_N03",
-    version="2.2",
+    version=mesh_N03.__version__,
     install_requires=[
         "numpy",
         "pygeoj",
