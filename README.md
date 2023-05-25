@@ -72,6 +72,19 @@ python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [
   An ordinance-designated city name is used if the administrative range is a part of the ordinance-designated city. 
   This option works only with '-l N03_004'
 
+  ### --inc-metropolis
+
+  Metropolis names will include in the town and village names.
+  This option works only with '-l N03_004'
+
+  ### --avoid-empty003
+
+  avoid enpty name (e.g. city name)
+  Because city name without ordinance-designated city has no information in N03_003 level,
+  the output names without this option with '-l N03_003' will be empty for the normal cities.
+  Using this option is recommended with '-l N03_003'.
+  This option works only with '-l N03_003'
+
 # GeoJSON data
 
 The GeoJSON data can be downloaded at http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html.

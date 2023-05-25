@@ -8,7 +8,7 @@ http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html
 """
 
 
-__version__ = "2.2"
+__version__ = "2.3"
 
 
 AdminLevels = [
@@ -50,19 +50,34 @@ def load_mask(f):
     return npz
 
 
-def get_admin_name_from_properties(properties, level, prio_ordcity=False):
+def get_admin_name_from_properties(
+    properties, level, prio_ordcity=False, inc_metropolis=False, avoid_empty003=False
+):
     if prio_ordcity and level != "N03_004":
         raise RuntimeError("prio_ordcity=True is only valid wiht level=N03_004")
+    if inc_metropolis and level != "N03_004":
+        raise RuntimeError("inc_metropolis=True is only valid with level=N03_004")
+    if avoid_empty003 and level != "N03_003":
+        raise RuntimeError("avoid_empty003=True is only valid with level=N03_003")
+    
     name_i = properties[level]
     if prio_ordcity:
         name_i = properties["N03_003"] if "市" in properties["N03_003"] else properties["N03_004"]
+    if inc_metropolis:
+        name_i = properties["N03_003"] + name_i if "郡" in properties["N03_003"] else name_i
+    if avoid_empty003:
+        name_i = properties["N03_004"] if len(name_i) == 0 else name_i
+
     return name_i
 
 
-def get_admin_name(geoj, level, prio_ordcity=False):
+def get_admin_name(geoj, level, prio_ordcity=False, inc_metropolis=False, avoid_empty003=False):
     name = []
     for feature in geoj:
-        name_i = get_admin_name_from_properties(feature.properties, level, prio_ordcity=prio_ordcity)
+        name_i = get_admin_name_from_properties(
+            feature.properties, level, 
+            prio_ordcity=prio_ordcity, inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
+        )
         if name_i not in name:
             name.append(name_i)
     return name
@@ -104,11 +119,17 @@ def _is_surrounded(lon, lat, lons, lats):
     return crossing_number_algorithm(lon, lat, lons, lats)
 
 
-def get_surrounded_name(lon, lat, geoj, level, prio_ordcity=False):
+def get_surrounded_name(
+    lon, lat, geoj, level, 
+    prio_ordcity=False, inc_metropolis=False, avoid_empty003=False
+):
     for feature in geoj:
         for lons, lats in _get_lonlats(feature):
             if _is_surrounded(lon, lat, lons, lats):
-                return get_admin_name_from_properties(feature.properties, level, prio_ordcity=prio_ordcity)
+                return get_admin_name_from_properties(
+                    feature.properties, level, prio_ordcity=prio_ordcity,
+                    inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
+                )
 
     raise NotFoundAdminName("Not found the surrounded administrative name!")
 
@@ -132,7 +153,10 @@ def _nearest_distance(lon, lat, lons, lats):
     return dd.min()
 
 
-def get_nearest_name(lon, lat, geoj, level, prio_ordcity=False):
+def get_nearest_name(
+    lon, lat, geoj, level, 
+    prio_ordcity=False, inc_metropolis=False, avoid_empty003=False
+):
     import numpy as np
 
     nearesets = np.full([len(geoj)], -np.inf)
@@ -143,10 +167,16 @@ def get_nearest_name(lon, lat, geoj, level, prio_ordcity=False):
         nearesets[i] = _nearest_distance(lon, lat, lons, lats)
 
     feature_min = geoj[nearesets.argmin()]
-    return get_admin_name_from_properties(feature_min.properties, level, prio_ordcity=prio_ordcity)
+    return get_admin_name_from_properties(
+        feature_min.properties, level, prio_ordcity=prio_ordcity,
+        inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
+    )
 
 
-def convert(fjson, fmask, level, msg=False, use_nearest=True, prio_ordcity=False):
+def convert(
+    fjson, fmask, level, msg=False, use_nearest=True, 
+    prio_ordcity=False, inc_metropolis=False, avoid_empty003=False
+):
     """
     convert GeoJSON of the Administrative boundary downloaded from nlftp.mlit.go.jp to meshed data
 
@@ -172,6 +202,13 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True, prio_ordcity=False
     :param prio_ordcity: ordinance-designated city name used if the administrative range is 
                          a part of the ordinance-designated city. 
                          This option works only with 'level=N03_004'
+    :param inc_metropolis: include metropolis names into the town and village names
+                           This option works only with 'level=N03_004'
+    :param avoid_empty003: avoid enpty name (e.g. city name)
+                           Because city name without ordinance-designated city has no information in N03_003 level,
+                           the output names without this option with 'level=N03_003' will be empty for the normal cities.
+                           Turning to True is recommended with 'level=N03_003'.
+                           THis option works only with 'level=N03_003'.
     :return: {
             'lons': 2-dimensional array presents the grid points for longitude axis,
             'lats': 2-dimensional array presents the grid points for latitude axis,
@@ -196,7 +233,10 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True, prio_ordcity=False
     # =========================================================== #
     # prepare out-data
     mesh = np.full_like(mask, -1, dtype=int)
-    name = get_admin_name(geoj, level, prio_ordcity=prio_ordcity)
+    name = get_admin_name(
+        geoj, level, prio_ordcity=prio_ordcity, 
+        inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
+    )
     if len(name) == 0:
         raise RuntimeError("GeoJSON does not have administrative name!")
     if msg:
@@ -223,11 +263,17 @@ def convert(fjson, fmask, level, msg=False, use_nearest=True, prio_ordcity=False
             lat = lats[j, i]
 
             try:
-                n = get_surrounded_name(lon, lat, geoj, level, prio_ordcity=prio_ordcity)
+                n = get_surrounded_name(
+                    lon, lat, geoj, level, prio_ordcity=prio_ordcity,
+                    inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
+                )
                 mesh[j, i] = name.index(n)
             except NotFoundAdminName as e:
                 if use_nearest:
-                    n = get_nearest_name(lon, lat, geoj, level, prio_ordcity=prio_ordcity)
+                    n = get_nearest_name(
+                        lon, lat, geoj, level, prio_ordcity=prio_ordcity,
+                        inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
+                    )
                     # warnings.warn(
                     #     "Not found the administrative name with the surrounded algorithm.\n" +
                     #     "Alternatively, the name is searched with the nearest algorithm.\n" +
@@ -339,13 +385,36 @@ This option works only with '-l N03_004'""",
         action="store_true",
         default=False
     )
+    parser.add_argument(
+        "--inc-metropolis",
+        help="""\
+metropolis names will include in the town and village names.
+This option works only with '-l N03_004'""",
+        required=False,
+        action="store_true",
+        default=False
+    )
+    parser.add_argument(
+        "--avoid-empty003",
+        help="""\
+avoid enpty name (e.g. city name)
+Because city name without ordinance-designated city has no information in N03_003 level,
+the output names without this option with '-l N03_003' will be empty for the normal cities.
+Using this option is recommended with '-l N03_003'.
+This option works only with '-l N03_003'.""",
+        required=False,
+        action="store_true",
+        default=False
+    )
 
     args = parser.parse_args()
 
     mesh = convert(
         args.json, args.mask, args.level,
         msg=True, use_nearest=not args.disable_nearest,
-        prio_ordcity=args.prio_ordcity
+        prio_ordcity=args.prio_ordcity,
+        inc_metropolis=args.inc_metropolis,
+        avoid_empty003=args.avoid_empty003
     )
     np.savez(
         args.output,
