@@ -8,8 +8,8 @@ http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html
 """
 
 
-__version__ = "2.3"
-
+__version__ = "2.4"
+_inf = float("inf")
 
 AdminLevels = [
     u"N03_001",
@@ -154,7 +154,7 @@ def _nearest_distance(lon, lat, lons, lats):
 
 
 def get_nearest_name(
-    lon, lat, geoj, level, 
+    lon, lat, geoj, level, nearest_distance_threshold=_inf,
     prio_ordcity=False, inc_metropolis=False, avoid_empty003=False
 ):
     import numpy as np
@@ -166,6 +166,11 @@ def get_nearest_name(
         lats = np.concatenate([lats for lons, lats in coods])
         nearesets[i] = _nearest_distance(lon, lat, lons, lats)
 
+    if nearesets.min() > nearest_distance_threshold:
+        raise NotFoundAdminName(
+            f"Not found the nearest administrative name within a threshold of {nearest_distance_threshold:g}."
+        )
+
     feature_min = geoj[nearesets.argmin()]
     return get_admin_name_from_properties(
         feature_min.properties, level, prio_ordcity=prio_ordcity,
@@ -174,7 +179,7 @@ def get_nearest_name(
 
 
 def convert(
-    fjson, fmask, level, msg=False, use_nearest=True, 
+    fjson, fmask, level, msg=False, nearest_distance_threshold=_inf, 
     prio_ordcity=False, inc_metropolis=False, avoid_empty003=False
 ):
     """
@@ -195,10 +200,12 @@ def convert(
                   *** See http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html ***
     :param msg: print message or not; default is False
                 If True, your system is needed to support displaying Japanese.
-    :param use_nearest: Use the nearest neighbor algorithm
-                        when a grid point is not located in the administrative region
-                        or not
-                        This should be False if the land/sea mask data is filled only with 1.
+    :param nearest_distance_threshold: A threshold of the nearest neighbor algorithm
+                                       The nearest neighbor algorithm will not work 
+                                       with this threshold of 0 (km).
+                                       Default is inf.
+                                       This threshold should be set to 0 
+                                       if the land/sea mask data is filled only with 1.
     :param prio_ordcity: ordinance-designated city name used if the administrative range is 
                          a part of the ordinance-designated city. 
                          This option works only with 'level=N03_004'
@@ -269,18 +276,22 @@ def convert(
                 )
                 mesh[j, i] = name.index(n)
             except NotFoundAdminName as e:
-                if use_nearest:
-                    n = get_nearest_name(
-                        lon, lat, geoj, level, prio_ordcity=prio_ordcity,
-                        inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003
-                    )
-                    mesh[j, i] = name.index(n)
-                    # warnings.warn(
-                    #     "Not found the administrative name with the surrounded algorithm.\n" +
-                    #     "Alternatively, the name is searched with the nearest algorithm.\n" +
-                    #     "(X, Y) = (%d, %d), name=%s" % (i, j, n),
-                    #     category=UserWarning
-                    # )
+                if nearest_distance_threshold > 0.:
+                    try:
+                        n = get_nearest_name(
+                            lon, lat, geoj, level, prio_ordcity=prio_ordcity,
+                            inc_metropolis=inc_metropolis, avoid_empty003=avoid_empty003,
+                            nearest_distance_threshold=nearest_distance_threshold
+                        )
+                        mesh[j, i] = name.index(n)
+                        # warnings.warn(
+                        #     "Not found the administrative name with the surrounded algorithm.\n" +
+                        #     "Alternatively, the name is searched with the nearest algorithm.\n" +
+                        #     "(X, Y) = (%d, %d), name=%s" % (i, j, n),
+                        #     category=UserWarning
+                        # )
+                    except NotFoundAdminName as e:
+                        continue
                 else:
                     continue
         else:
@@ -302,7 +313,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         prog="mesh_N03.py",
         usage="""\
-python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} [--disable-nearest] [--prio_ordcity]
+python mesh_N03.py -j {GeoJSON} -m {Seal/Land mask} -l {AdminLevel} -o {output} [options...]
 """,
         description="""\
 This program convert the administrative boundary data (GeoJSON file) 
@@ -364,16 +375,17 @@ N03_007: code number of administrative division
         required=True
     )
     parser.add_argument(
-        "--disable-nearest",
+        "--nearest-distance",
         help="""\
-Use nearest neighbor algorithm or not
-This algorithm will be used 
-when a grid point is not located 
-in the administrative region.
-You should use this option if the mask data filled with 1 is assigned.""",
+A threshold of the nearest neighbor algorithm.
+The nearest neighbor algorithm will work with this threshold more than zero.
+Default is inf. Unit is km.
+The algorithm will be used when a grid point is not located in the administrative region.
+This threshold should be set to zero if the mask data fully filled with 1.""",
         required=False,
-        action="store_true",
-        default=False
+        action="store",
+        default=_inf,
+        type=float
     )
     parser.add_argument(
         "--prio-ordcity",
@@ -412,7 +424,7 @@ This option works only with '-l N03_003'.""",
 
     mesh = convert(
         args.json, args.mask, args.level,
-        msg=True, use_nearest=not args.disable_nearest,
+        msg=True, nearest_distance_threshold=args.nearest_distance,
         prio_ordcity=args.prio_ordcity,
         inc_metropolis=args.inc_metropolis,
         avoid_empty003=args.avoid_empty003

@@ -12,7 +12,7 @@ In order to run this program, your system is necessary to support displaying Jap
 # General Usage
 
 ```
-python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [--disable-nearest]
+python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [options...]
 ```
 
 ## Mandatory arguments
@@ -38,9 +38,6 @@ python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [
   - lats: 2-dimensional array presents the grid points for latitude axis 
   - data: 2-dimensional array present land (=1) and sea (=0) 
   
-  If you do not have the mask data, an array filled with 1 can be assigned as the data field. 
-  If so, note that you should not use the nearest neighbor algorithm (set --disable-nearest).
-  
   ### -l AdminLevel, --level AdminLevel 
   
   the administrative level, 
@@ -60,12 +57,13 @@ python mesh_N03.py -j {GeoJSON} -m {Sea/Land mask} -l {AdminLevel} -o {output} [
   
   ## Optional arguments
   
-  ### --disable-nearest     
+  ### --nearest-distance
   
-  Use nearest neighbor algorithm or not 
-  
-  This algorithm will be used when a grid point is not located in the administrative region. 
-  You should use this option if the mask data filled with 1 is assigned.
+  A threshold of the nearest neighbor algorithm.
+  The nearest neighbor algorithm will work with this threshold more than zero.
+  Default is inf. Unit is km.
+  The algorithm will be used when a grid point is not located in the administrative region.
+  This threshold should be set to zero if the mask data fully filled with 1.
 
   ### --prio-ordcity
 
